@@ -1,17 +1,18 @@
 import { useState, useEffect } from "react";
 import { StyleSheet, View, Dimensions, Text } from "react-native";
 import { Gyroscope } from "expo-sensors";
-import TelaInicio from "@/components/TelaInicio"
+import TelaInicio from "@/components/TelaInicio";
+import TelaPlacar from "@/components/TelaPlacar";
 
 const { width, height } = Dimensions.get("window");
 const PLAYER_SIZE = 50;
 const ORB_SIZE = 30;
+const TEMPO_TOTAL = 30;
 
-// A função que gera a posição do orbe.
 const generateRandomPosition = () => {
   const position = {
     x: Math.random() * (width - ORB_SIZE),
-    y: Math.random() * (height - ORB_SIZE),
+    y: Math.random() * (height - ORB_SIZE - 100), 
   };
   return position;
 };
@@ -25,14 +26,43 @@ export default function App() {
   const [orbPosition, setOrbPosition] = useState(generateRandomPosition());
   const [placar, setPlacar] = useState<number>(0);
   const [gameOn, setGameOn] = useState<boolean>(false);
+  const [timer, setTimer] = useState(TEMPO_TOTAL);
+  const [showPlacar, setShowPlacar] = useState<boolean>(false);
 
-  if (!gameOn){
-    return(
-      <TelaInicio/>
-    )
-  }
-
+  // Efeito do Timer
   useEffect(() => {
+    if (!gameOn) return;
+
+    const interval = setInterval(() => {
+      setTimer((prevTimer) => {
+        if (prevTimer <= 1) {
+          clearInterval(interval);
+          setGameOn(false);
+          setShowPlacar(true);
+          return 0;
+        }
+        return prevTimer - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [gameOn]);
+
+  // Reinicia o timer quando o jogo começa
+  useEffect(() => {
+    if (gameOn) {
+      setTimer(TEMPO_TOTAL);
+      setPlacar(0);
+      setShowPlacar(false);
+      setPlayerPosition({ x: width / 2, y: height / 2 });
+      setOrbPosition(generateRandomPosition());
+    }
+  }, [gameOn]);
+
+  // Giroscópio
+  useEffect(() => {
+    if (!gameOn) return;
+
     Gyroscope.setUpdateInterval(16);
 
     const subscription = Gyroscope.addListener((gyroscopeData) => {
@@ -40,21 +70,28 @@ export default function App() {
     });
 
     return () => subscription.remove();
-  }, []);
+  }, [gameOn]);
 
+  // Movimento do jogador
   useEffect(() => {
+    if (!gameOn) return;
+
     let newX = playerPosition.x - data.y * 10;
     let newY = playerPosition.y - data.x * 10;
 
+    // Garante que o jogador fique dentro dos limites
     if (newX < 0) newX = 0;
     if (newX > width - PLAYER_SIZE) newX = width - PLAYER_SIZE;
     if (newY < 0) newY = 0;
-    if (newY > height - PLAYER_SIZE) newY = height - PLAYER_SIZE;
+    if (newY > height - PLAYER_SIZE - 100) newY = height - PLAYER_SIZE - 100; 1
 
     setPlayerPosition({ x: newX, y: newY });
-  }, [data]);
+  }, [data, gameOn]);
 
+  // Colisão com o orbe
   useEffect(() => {
+    if (!gameOn) return;
+
     const playerCenterX = playerPosition.x + PLAYER_SIZE / 2;
     const playerCenterY = playerPosition.y + PLAYER_SIZE / 2;
     const orbCenterX = orbPosition.x + ORB_SIZE / 2;
@@ -66,18 +103,32 @@ export default function App() {
 
     if (distance < PLAYER_SIZE / 2 + ORB_SIZE / 2) {
       setOrbPosition(generateRandomPosition());
-      setPlacar(placar + 1);
+      setPlacar((prev) => prev + 1);
     }
-  }, [playerPosition]);
+  }, [playerPosition, gameOn]);
+
+  if (showPlacar) {
+    return <TelaPlacar placar={placar} setShowPlacar={setShowPlacar} setGameOn={setGameOn} />;
+  }
+
+  if (!gameOn) {
+    return <TelaInicio gameOn={gameOn} setGameOn={setGameOn} />;
+  }
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.instructions}>Colete o orbe azul!</Text>
+        
+        <View style={styles.timerContainer}>
+          <Text style={styles.timerText}>{timer}s</Text>
+        </View>
+        
         <View style={styles.placar}>
           <Text style={styles.placar_texto}>{placar}</Text>
         </View>
       </View>
+      
       <View style={styles.gameArea}>
         <View
           style={[
@@ -130,7 +181,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 15,
     paddingVertical: 8,
     borderRadius: 20,
-    backdropFilter: "blur(5px)",
+  },
+  timerContainer: {
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    paddingHorizontal: 15,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "#fff",
+  },
+  timerText: {
+    color: "#fff",
+    fontSize: 18,
+    fontWeight: "bold",
   },
   placar: {
     height: 50,
@@ -149,7 +212,6 @@ const styles = StyleSheet.create({
     elevation: 10,
     borderWidth: 2,
     borderColor: "#ffed4a",
-    transform: [{ scale: 1 }],
   },
   placar_texto: {
     fontSize: 28,
@@ -162,6 +224,7 @@ const styles = StyleSheet.create({
   gameArea: {
     flex: 1,
     backgroundColor: "#1a1a2e",
+    marginTop: 100, // ✅ Adiciona margem para evitar sobreposição com o header
   },
   player: {
     position: "absolute",
